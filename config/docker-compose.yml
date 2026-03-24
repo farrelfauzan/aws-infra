@@ -1,0 +1,257 @@
+services:
+  # --- Infrastructure ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: performa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-performa_hls_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-performa_hls_db}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - performa
+
+  redis:
+    image: redis:7-alpine
+    container_name: performa-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 48mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    networks:
+      - performa
+
+  # --- HLS Conversion ---
+  hls-api:
+    image: ${ECR_REGISTRY}/performa-dev/hls-api:${IMAGE_TAG:-latest}
+    container_name: performa-hls-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-performa_hls_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      API_KEY: ${HLS_API_KEY:-}
+    volumes:
+      - hls_temp:/tmp/hls_converter
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    networks:
+      - performa
+
+  hls-worker:
+    image: ${ECR_REGISTRY}/performa-dev/hls-worker:${IMAGE_TAG:-latest}
+    container_name: performa-hls-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-performa_hls_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      WEBHOOK_URL: ${WEBHOOK_URL:-}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+    volumes:
+      - hls_temp:/tmp/hls_converter
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - performa
+
+  # ===========================================================
+  # FUTURE: Uncomment below when ready to deploy performa-edu
+  # ===========================================================
+  # api-gateway:
+  #   image: ${ECR_REGISTRY}/performa-dev/api-gateway:${IMAGE_TAG:-latest}
+  #   container_name: performa-api-gateway
+  #   restart: unless-stopped
+  #   environment:
+  #     NODE_ENV: production
+  #     PORT: 3000
+  #     DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/performa_edu_db?schema=public
+  #     JWT_SECRET: ${JWT_SECRET}
+  #     JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+  #     JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
+  #     AUTH_SERVICE_GRPC_HOST: auth-service
+  #     AUTH_SERVICE_GRPC_PORT: 50051
+  #     CONTENT_SERVICE_GRPC_HOST: content-service
+  #     CONTENT_SERVICE_GRPC_PORT: 50052
+  #     CUSTOMER_SERVICE_GRPC_HOST: customer-service
+  #     CUSTOMER_SERVICE_GRPC_PORT: 50053
+  #     STUDENT_SERVICE_GRPC_HOST: student-service
+  #     STUDENT_SERVICE_GRPC_PORT: 50054
+  #     REDIS_URL: redis://redis:6379
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #     auth-service:
+  #       condition: service_started
+  #     content-service:
+  #       condition: service_started
+  #     customer-service:
+  #       condition: service_started
+  #     student-service:
+  #       condition: service_started
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 256M
+  #   networks:
+  #     - performa
+  #
+  # auth-service:
+  #   image: ${ECR_REGISTRY}/performa-dev/auth-service:${IMAGE_TAG:-latest}
+  #   container_name: performa-auth-service
+  #   restart: unless-stopped
+  #   environment:
+  #     NODE_ENV: production
+  #     AUTH_SERVICE_GRPC_HOST: 0.0.0.0
+  #     AUTH_SERVICE_GRPC_PORT: 50051
+  #     DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/performa_edu_db?schema=public
+  #     JWT_SECRET: ${JWT_SECRET}
+  #     JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+  #     JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
+  #     REDIS_URL: redis://redis:6379
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 128M
+  #   networks:
+  #     - performa
+  #
+  # content-service:
+  #   image: ${ECR_REGISTRY}/performa-dev/content-service:${IMAGE_TAG:-latest}
+  #   container_name: performa-content-service
+  #   restart: unless-stopped
+  #   environment:
+  #     NODE_ENV: production
+  #     CONTENT_SERVICE_GRPC_HOST: 0.0.0.0
+  #     CONTENT_SERVICE_GRPC_PORT: 50052
+  #     DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/performa_edu_db?schema=public
+  #     REDIS_URL: redis://redis:6379
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 128M
+  #   networks:
+  #     - performa
+  #
+  # customer-service:
+  #   image: ${ECR_REGISTRY}/performa-dev/customer-service:${IMAGE_TAG:-latest}
+  #   container_name: performa-customer-service
+  #   restart: unless-stopped
+  #   environment:
+  #     NODE_ENV: production
+  #     CUSTOMER_SERVICE_GRPC_HOST: 0.0.0.0
+  #     CUSTOMER_SERVICE_GRPC_PORT: 50053
+  #     DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/performa_edu_db?schema=public
+  #     REDIS_URL: redis://redis:6379
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 128M
+  #   networks:
+  #     - performa
+  #
+  # student-service:
+  #   image: ${ECR_REGISTRY}/performa-dev/student-service:${IMAGE_TAG:-latest}
+  #   container_name: performa-student-service
+  #   restart: unless-stopped
+  #   environment:
+  #     NODE_ENV: production
+  #     STUDENT_SERVICE_GRPC_HOST: 0.0.0.0
+  #     STUDENT_SERVICE_GRPC_PORT: 50054
+  #     AUTH_SERVICE_GRPC_HOST: auth-service
+  #     AUTH_SERVICE_GRPC_PORT: 50051
+  #     DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/performa_edu_db?schema=public
+  #     REDIS_URL: redis://redis:6379
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 128M
+  #   networks:
+  #     - performa
+  #
+  # performa-studio:
+  #   image: ${ECR_REGISTRY}/performa-dev/performa-studio:${IMAGE_TAG:-latest}
+  #   container_name: performa-studio
+  #   restart: unless-stopped
+  #   environment:
+  #     NODE_ENV: production
+  #     PORT: 3001
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 256M
+  #   networks:
+  #     - performa
+
+networks:
+  performa:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  hls_temp:

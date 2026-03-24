@@ -1,0 +1,35 @@
+{
+  "vpc-provider:account=908027420278:filter.isDefault=true:region=ap-southeast-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-09f58b89da021c7a1",
+    "vpcCidrBlock": "172.31.0.0/16",
+    "ownerAccountId": "908027420278",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "Public",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-093c89b0b5df1445b",
+            "cidr": "172.31.32.0/20",
+            "availabilityZone": "ap-southeast-1a",
+            "routeTableId": "rtb-0e843c19e8143d3be"
+          },
+          {
+            "subnetId": "subnet-0834819774049515b",
+            "cidr": "172.31.16.0/20",
+            "availabilityZone": "ap-southeast-1b",
+            "routeTableId": "rtb-0e843c19e8143d3be"
+          },
+          {
+            "subnetId": "subnet-07bb2fcff20811427",
+            "cidr": "172.31.0.0/20",
+            "availabilityZone": "ap-southeast-1c",
+            "routeTableId": "rtb-0e843c19e8143d3be"
+          }
+        ]
+      }
+    ]
+  },
+  "ami:account=908027420278:filters.image-type.0=machine:filters.name.0=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*:filters.state.0=available:owners.0=099720109477:region=ap-southeast-1": "ami-0d17372de612983fe"
+}
