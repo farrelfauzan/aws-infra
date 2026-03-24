@@ -46,6 +46,8 @@ services:
     image: ${ECR_REGISTRY}/performa-dev/hls-api:${IMAGE_TAG:-latest}
     container_name: performa-hls-api
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-performa_hls_db}
       REDIS_URL: redis://redis:6379/0
