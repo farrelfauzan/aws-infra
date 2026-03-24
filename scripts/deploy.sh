@@ -15,16 +15,26 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
-# Source env for ECR_REGISTRY
+# Source env for ECR_REGISTRY (save and restore AWS creds so instance role is used for ECR login)
+_AWS_AKI="${AWS_ACCESS_KEY_ID:-}"
+_AWS_SAK="${AWS_SECRET_ACCESS_KEY:-}"
 set -a
 source "$ENV_FILE"
 set +a
+
+# Use instance role for ECR auth, not .env credentials
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
 
 REGION="${AWS_REGION:-ap-southeast-1}"
 
 echo "==> Logging into ECR..."
 aws ecr get-login-password --region "$REGION" \
   | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+
+# Restore AWS creds for docker containers that need them (HLS S3 access)
+export AWS_ACCESS_KEY_ID="$_AWS_AKI"
+export AWS_SECRET_ACCESS_KEY="$_AWS_SAK"
 
 echo "==> Pulling latest images..."
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" pull
