@@ -71,8 +71,8 @@ export class InfraStack extends cdk.Stack {
 
     this.instanceSecurityGroup.addIngressRule(
       ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(22),
-      "Allow SSH",
+      ec2.Port.udp(51820),
+      "Allow WireGuard VPN",
     );
 
     // -------------------------------------------------------
@@ -140,12 +140,24 @@ export class InfraStack extends cdk.Stack {
       'echo \'{"credsStore": "ecr-login"}\' > /home/ubuntu/.docker/config.json',
       "chown -R ubuntu:ubuntu /home/ubuntu/.docker",
 
-      // Nginx
-      "apt-get install -y nginx",
+      // Nginx + Certbot (SSL)
+      "apt-get install -y nginx certbot python3-certbot-nginx",
       "systemctl enable nginx",
 
       // AWS CLI
       "apt-get install -y awscli",
+
+      // WireGuard VPN
+      "apt-get install -y wireguard qrencode",
+      "wg genkey | tee /etc/wireguard/server_private.key | wg pubkey > /etc/wireguard/server_public.key",
+      "chmod 600 /etc/wireguard/server_private.key",
+      "PRIVATE_KEY=$(cat /etc/wireguard/server_private.key)",
+      "cat > /etc/wireguard/wg0.conf << EOF\n[Interface]\nAddress = 10.200.200.1/24\nListenPort = 51820\nPrivateKey = $PRIVATE_KEY\nPostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o ens5 -j MASQUERADE\nPostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o ens5 -j MASQUERADE\nEOF",
+      "chmod 600 /etc/wireguard/wg0.conf",
+      "echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf",
+      "sysctl -p",
+      "systemctl enable wg-quick@wg0",
+      "systemctl start wg-quick@wg0",
 
       // App directory
       "mkdir -p /opt/performa",
