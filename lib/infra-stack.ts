@@ -134,11 +134,17 @@ export class InfraStack extends cdk.Stack {
       "systemctl enable docker",
       "usermod -aG docker ubuntu",
 
+      // ECR credential helper (no more `docker login` needed)
+      "apt-get install -y amazon-ecr-credential-helper",
+      "mkdir -p /home/ubuntu/.docker",
+      'echo \'{"credsStore": "ecr-login"}\' > /home/ubuntu/.docker/config.json',
+      "chown -R ubuntu:ubuntu /home/ubuntu/.docker",
+
       // Nginx
       "apt-get install -y nginx",
       "systemctl enable nginx",
 
-      // AWS CLI (for ECR login)
+      // AWS CLI
       "apt-get install -y awscli",
 
       // App directory
